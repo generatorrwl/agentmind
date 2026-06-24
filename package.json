@@ -1,0 +1,30 @@
+{
+  "name": "agentmind",
+  "version": "0.1.0",
+  "description": "Local-first, self-evolving capability layer for cross-harness coding agents.",
+  "type": "module",
+  "bin": {
+    "agentmind": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTMIND_BOOTSTRAP.md",
+    "PRODUCT_PRD.md",
+    "PRODUCT_PRD.zh-CN.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build",
+    "prepare": "npm run build",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

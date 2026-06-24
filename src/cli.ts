@@ -1,0 +1,272 @@
+import path from "node:path";
+import { connectHarness } from "./adapters.js";
+import { importLocalSkill } from "./capabilities.js";
+import { startMcpServer } from "./mcp.js";
+import { reflectLatest } from "./reflect.js";
+import { listPendingProposals, moveProposal } from "./review.js";
+import { initStore, storeStatus, writeEpisode, writeReward } from "./store.js";
+import { AgentHarness } from "./types.js";
+import { onlineEnd, onlineStart, onlineStatus, specCreate, workAbandon, workAdd, workCheckpoint, workClaim, workFinish, workList, workPause } from "./work.js";
+
+export async function runCli(argv: string[]): Promise<void> {
+  const { args, root } = parseArgs(argv);
+  const [command, subcommand, value] = args;
+
+  if (!command || command === "help" || command === "--help") {
+    printHelp();
+    return;
+  }
+
+  if (command === "init") {
+    const created = await initStore(root);
+    console.log(`AgentMind initialized at ${path.join(root, ".agent-context")}`);
+    if (created.length > 0) console.log(`Created:\n${created.map((item) => `- ${item}`).join("\n")}`);
+    return;
+  }
+
+  if (command === "status") {
+    console.log(JSON.stringify(await storeStatus(root), null, 2));
+    return;
+  }
+
+  if (command === "online" && subcommand === "start") {
+    console.log(JSON.stringify(await onlineStart(root, {
+      harness: parseOptionalHarness(readOption(args, "--harness")),
+      session: readOption(args, "--session"),
+      focus: readOption(args, "--focus"),
+      staleMinutes: parseOptionalNumber(readOption(args, "--stale-minutes")),
+    }), null, 2));
+    return;
+  }
+
+  if (command === "online" && subcommand === "status") {
+    console.log(JSON.stringify(await onlineStatus(root, {
+      currentSession: readOption(args, "--session"),
+      staleMinutes: parseOptionalNumber(readOption(args, "--stale-minutes")),
+    }), null, 2));
+    return;
+  }
+
+  if (command === "online" && subcommand === "end") {
+    const session = readOption(args, "--session") ?? value;
+    if (!session) throw new Error("Usage: agentmind online end --session <id>");
+    console.log(JSON.stringify(await onlineEnd(root, session), null, 2));
+    return;
+  }
+
+  if (command === "work" && subcommand === "add") {
+    const title = value ?? readOption(args, "--title");
+    if (!title) throw new Error("Usage: agentmind work add <title>");
+    console.log(JSON.stringify(await workAdd(root, {
+      title,
+      priority: parsePriority(readOption(args, "--priority")),
+      goal: readOption(args, "--goal"),
+      next: readOption(args, "--next"),
+    }), null, 2));
+    return;
+  }
+
+  if (command === "work" && subcommand === "list") {
+    console.log(JSON.stringify(await workList(root, parseWorkStatus(readOption(args, "--status"))), null, 2));
+    return;
+  }
+
+  if (command === "work" && subcommand === "claim") {
+    if (!value) throw new Error("Usage: agentmind work claim <id> --session <id>");
+    const session = readOption(args, "--session");
+    if (!session) throw new Error("work claim requires --session <id>");
+    console.log(JSON.stringify(await workClaim(root, value, { session, scope: readRepeatedOptions(args, "--scope") }), null, 2));
+    return;
+  }
+
+  if (command === "work" && subcommand === "checkpoint") {
+    if (!value) throw new Error("Usage: agentmind work checkpoint <id> --summary <text>");
+    const summary = readOption(args, "--summary");
+    if (!summary) throw new Error("work checkpoint requires --summary <text>");
+    console.log(JSON.stringify(await workCheckpoint(root, value, {
+      session: readOption(args, "--session"),
+      summary,
+      next: readOption(args, "--next"),
+      blockers: readRepeatedOptions(args, "--blocker"),
+      changedFiles: readRepeatedOptions(args, "--file"),
+      verification: readRepeatedOptions(args, "--verification"),
+    }), null, 2));
+    return;
+  }
+
+  if (command === "work" && (subcommand === "pause" || subcommand === "finish" || subcommand === "abandon")) {
+    if (!value) throw new Error(`Usage: agentmind work ${subcommand} <id>`);
+    const input = { session: readOption(args, "--session"), summary: readOption(args, "--summary"), next: readOption(args, "--next") };
+    const result = subcommand === "pause"
+      ? await workPause(root, value, input)
+      : subcommand === "finish"
+        ? await workFinish(root, value, input)
+        : await workAbandon(root, value, input);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === "spec" && subcommand === "create") {
+    const title = value ?? readOption(args, "--title");
+    if (!title) throw new Error("Usage: agentmind spec create <title>");
+    console.log(JSON.stringify(await specCreate(root, { title, workId: readOption(args, "--work") }), null, 2));
+    return;
+  }
+
+  if (command === "connect") {
+    const harness = parseHarness(subcommand);
+    const files = await connectHarness(root, harness);
+    console.log(`Connected ${harness}. Updated:\n${files.map((item) => `- ${item}`).join("\n")}`);
+    return;
+  }
+
+  if (command === "import" && subcommand === "skill") {
+    if (!value) throw new Error("Usage: agentmind import skill <path>");
+    const result = await importLocalSkill(root, value);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === "reflect" && subcommand === "latest") {
+    const proposal = await reflectLatest(root);
+    if (!proposal) console.log("No episode or reward signal found to reflect on.");
+    else console.log(JSON.stringify(proposal, null, 2));
+    return;
+  }
+
+  if (command === "record" && subcommand === "episode") {
+    const goal = value ?? readOption(args, "--goal");
+    if (!goal) throw new Error("Usage: agentmind record episode <goal>");
+    const episode = await writeEpisode(root, {
+      goal,
+      agent: readOption(args, "--agent"),
+      outcome: parseOutcome(readOption(args, "--outcome")),
+    });
+    console.log(JSON.stringify(episode, null, 2));
+    return;
+  }
+
+  if (command === "record" && subcommand === "reward") {
+    const reward = await writeReward(root, {
+      source: "human",
+      polarity: parsePolarity(readOption(args, "--polarity")),
+      target_episode: readOption(args, "--episode"),
+      evidence: readRepeatedOptions(args, "--evidence"),
+      suspected_causes: readRepeatedOptions(args, "--cause"),
+    });
+    console.log(JSON.stringify(reward, null, 2));
+    return;
+  }
+
+  if (command === "review") {
+    const acceptIndex = args.indexOf("--accept");
+    const rejectIndex = args.indexOf("--reject");
+    if (acceptIndex >= 0 && args[acceptIndex + 1]) {
+      await moveProposal(root, args[acceptIndex + 1]!, "accepted");
+      console.log(`Accepted proposal ${args[acceptIndex + 1]}`);
+      return;
+    }
+    if (rejectIndex >= 0 && args[rejectIndex + 1]) {
+      await moveProposal(root, args[rejectIndex + 1]!, "rejected");
+      console.log(`Rejected proposal ${args[rejectIndex + 1]}`);
+      return;
+    }
+    const proposals = await listPendingProposals(root);
+    console.log(JSON.stringify({ proposals }, null, 2));
+    return;
+  }
+
+  if (command === "mcp") {
+    startMcpServer(root);
+    return;
+  }
+
+  throw new Error(`Unknown command: ${args.join(" ")}`);
+}
+
+function parseArgs(argv: string[]): { args: string[]; root: string } {
+  const args = [...argv];
+  let root = process.cwd();
+  const rootIndex = args.indexOf("--root");
+  if (rootIndex >= 0) {
+    const rootValue = args[rootIndex + 1];
+    if (!rootValue) throw new Error("--root requires a path");
+    root = path.resolve(rootValue);
+    args.splice(rootIndex, 2);
+  }
+  return { args, root };
+}
+
+function parseHarness(input: string | undefined): AgentHarness {
+  if (input === "codex" || input === "claude") return input;
+  if (input === "claude-code") return "claude";
+  throw new Error("Usage: agentmind connect <codex|claude>");
+}
+
+function parseOptionalHarness(input: string | undefined): AgentHarness | undefined {
+  if (!input) return undefined;
+  return parseHarness(input);
+}
+
+function parsePriority(value: string | undefined): "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high" ? value : "medium";
+}
+
+function parseWorkStatus(value: string | undefined): "todo" | "doing" | "done" | "paused" | "abandoned" | undefined {
+  if (!value) return undefined;
+  return value === "todo" || value === "doing" || value === "done" || value === "paused" || value === "abandoned" ? value : undefined;
+}
+
+function parseOptionalNumber(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readOption(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+function readRepeatedOptions(args: string[], flag: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === flag && args[index + 1]) values.push(args[index + 1]!);
+  }
+  return values;
+}
+
+function parseOutcome(value: string | undefined): "success" | "failed" | "unknown" {
+  return value === "success" || value === "failed" || value === "unknown" ? value : "unknown";
+}
+
+function parsePolarity(value: string | undefined): "positive" | "negative" | "mixed" | "neutral" {
+  return value === "positive" || value === "negative" || value === "mixed" || value === "neutral" ? value : "neutral";
+}
+
+function printHelp(): void {
+  console.log(`AgentMind
+
+Usage:
+  agentmind init [--root <path>]
+  agentmind status [--root <path>]
+  agentmind online start --harness <codex|claude> [--session <id>] [--focus <text>] [--stale-minutes <n>] [--root <path>]
+  agentmind online status [--session <id>] [--stale-minutes <n>] [--root <path>]
+  agentmind online end --session <id> [--root <path>]
+  agentmind work add <title> [--priority <low|medium|high>] [--goal <text>] [--next <text>] [--root <path>]
+  agentmind work list [--status <todo|doing|paused|done|abandoned>] [--root <path>]
+  agentmind work claim <id> --session <id> [--scope <text>] [--root <path>]
+  agentmind work checkpoint <id> --summary <text> [--session <id>] [--next <text>] [--blocker <text>] [--file <path>] [--verification <text>] [--root <path>]
+  agentmind work pause <id> [--session <id>] [--summary <text>] [--next <text>] [--root <path>]
+  agentmind work finish <id> [--session <id>] [--summary <text>] [--root <path>]
+  agentmind work abandon <id> [--session <id>] [--summary <text>] [--root <path>]
+  agentmind spec create <title> [--work <id>] [--root <path>]
+  agentmind connect <codex|claude> [--root <path>]
+  agentmind import skill <path> [--root <path>]
+  agentmind record episode <goal> [--agent <name>] [--outcome <success|failed|unknown>] [--root <path>]
+  agentmind record reward [--polarity <positive|negative|mixed|neutral>] [--episode <id>] [--evidence <text>] [--cause <text>] [--root <path>]
+  agentmind reflect latest [--root <path>]
+  agentmind review [--accept <id>|--reject <id>] [--root <path>]
+  agentmind mcp [--root <path>]
+`);
+}
