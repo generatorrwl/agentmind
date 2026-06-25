@@ -155,6 +155,27 @@ This means the wiki is not a passive documentation folder. It is a maintained kn
 
 Skills encode repeatable project workflows. They should be portable across agents where possible, with adapter-specific packaging only at the edge.
 
+AgentMind should distinguish **skill content** from **harness discovery mechanics**:
+
+- Skill content is a cross-harness capability: instructions, triggers, workflow steps, validation, failure handling, and safety boundaries.
+- Harness discovery is adapter-specific: Claude Code may discover `.claude/skills/*/SKILL.md`; Codex may need an `AGENTS.md` instruction and a generated skill index; Cursor may need `.cursor/rules`.
+
+Therefore, the canonical skill source should live in AgentMind first:
+
+```text
+.agent-context/skills/<skill-id>/SKILL.md
+```
+
+Adapters may render harness-native views from that canonical skill:
+
+```text
+.agent-context/skills/wiki-note/SKILL.md       # canonical source
+.claude/skills/wiki-note/SKILL.md              # Claude Code generated view
+.agent-context/adapters/codex/SKILLS.md        # Codex generated skill index
+```
+
+Claude Code can use skills outside `.claude/skills` when instructed to read them, but `.claude/skills` gives it a stronger native discovery surface. Codex can use the same `SKILL.md` content when `AGENTS.md` or a Codex skill index points it to the canonical skill file.
+
 Examples:
 
 - How to add a database migration in this repo.
@@ -478,8 +499,8 @@ flowchart TB
   Canonical --> AO[OpenCode Adapter]
   Canonical --> AM[MCP Server]
 
-  AC --> C1[AGENTS.md / Codex context]
-  ACL --> C2[CLAUDE.md / .claude skills / hooks]
+  AC --> C1[AGENTS.md / Codex context / SKILLS.md index]
+  ACL --> C2[CLAUDE.md / generated .claude skills / hooks]
   AR --> C3[.cursor/rules]
   AO --> C4[OpenCode config]
   AM --> C5[Generic MCP clients]
@@ -535,13 +556,58 @@ Suggested local layout:
 
 | Agent | Adapter Output |
 |---|---|
-| Codex | `AGENTS.md`, Codex skills, MCP config |
-| Claude Code | `CLAUDE.md`, skills, hooks, MCP config |
+| Codex | `AGENTS.md`, `.agent-context/adapters/codex/SKILLS.md`, MCP config |
+| Claude Code | `CLAUDE.md`, generated `.claude/skills/<skill-id>/SKILL.md`, hooks, MCP config |
 | Cursor | `.cursor/rules`, MCP config |
 | OpenCode | plugin/config/instructions |
 | Generic MCP client | MCP server exposing memory/wiki/skill/tool APIs |
 
 The canonical asset should be edited once. Agent-specific files should be generated or synchronized from it.
+
+### 11.3 Cross-Harness Skill Rendering
+
+AgentMind should treat `.agent-context/skills/` as the source of truth for project skills. Adapter outputs are views.
+
+Rendering rules:
+
+- Canonical skill edits happen in `.agent-context/skills/<skill-id>/SKILL.md` through proposals or explicit user action.
+- Claude Code adapter may render a generated copy into `.claude/skills/<skill-id>/SKILL.md` for native discovery.
+- Codex adapter should render a skill index, such as `.agent-context/adapters/codex/SKILLS.md`, and reference it from `AGENTS.md`.
+- Adapter views should be marked generated and should not become the canonical source.
+- Imported Claude Code skills can be promoted into canonical AgentMind skills, then rendered back to Claude Code and exposed to Codex.
+
+This allows a skill originally written for Claude Code to become a cross-harness capability without assuming Codex has the same native skill directory or hook mechanism.
+
+### 11.4 Skill Import, Promote, And Render Timing
+
+Cross-harness skill migration should happen at explicit lifecycle points. AgentMind should not copy a Claude Code skill into Codex or canonical storage opportunistically during unrelated work.
+
+| Timing | Input | Action | Output |
+|---|---|---|---|
+| Setup existing repo | Existing `.claude/skills/*`, `AGENTS.md`, `.cursor/rules`, local skill folders | Discover candidate skills and record provenance | Candidate capabilities + proposals |
+| Explicit import | User runs `agentmind import skill <path>` | Copy or normalize the source into AgentMind candidate storage | Candidate canonical skill + review proposal |
+| Review / promote | User accepts proposal | Promote candidate into canonical `.agent-context/skills/<skill-id>/SKILL.md` | Active canonical skill |
+| Render adapters | `connect`, `render`, or accepted promotion | Generate harness views from canonical skill | `.claude/skills/*`, Codex `SKILLS.md`, Cursor rules |
+| Work end / reflection | Episode shows a new or changed workflow | Generate skill patch proposal | Pending skill update |
+
+Hard rules:
+
+- Discovery is not promotion.
+- Import is not activation.
+- Promotion updates the canonical skill source.
+- Render creates adapter views only.
+- Adapter views are generated outputs, not the source of truth.
+
+Canonical flow:
+
+```text
+.claude/skills/foo/SKILL.md
+  -> discovered/imported candidate
+  -> proposal
+  -> accepted promotion
+  -> .agent-context/skills/foo/SKILL.md
+  -> rendered Claude view + Codex skill index
+```
 
 ## 12. Capability Registry & Import Layer
 
@@ -932,7 +998,21 @@ captured -> summarized -> linked -> ingested -> cited -> superseded/archived
 - `cited`: wiki or skill entries cite this reference.
 - `superseded/archived`: newer references replace or reduce its relevance.
 
-### 15.2 Suggested Store
+### 15.2 Reference Fetch Capability Adapter
+
+URL fetching, content cleaning, and web-to-Markdown conversion should not be implemented from scratch inside AgentMind core. Many public skills/tools/MCP servers can provide this layer, such as Readability/Defuddle-style extraction, Trafilatura, Firecrawl, Jina Reader, MarkItDown, browser/Playwright skills, and generic web fetch MCP servers.
+
+AgentMind should integrate these as **reference intake capabilities** instead of becoming a crawler product. Recommended boundary:
+
+- `reference add <url>` records only the URL, reason, source record, and extraction proposal.
+- If the workspace has a web-reader, browser, defuddle, Firecrawl, Jina Reader, or similar capability, the agent may use it to fetch clean text and write a snapshot under `.agent-context/sources/external/`.
+- AgentMind records provenance, fetching tool, timestamp, permission, risk, hash/metadata, and linked proposals.
+- Fetched text is not fixed knowledge. The extraction flow still decides what can be promoted into wiki, memory, skills, or tool rules.
+- URLs requiring login, paywall access, dynamic browsing, robots/copyright caution, or sensitive content should require explicit user confirmation and risk recording.
+
+Therefore URL fetch is a pluggable public capability; compiling references into project fixed knowledge and fixed capability is AgentMind's core value.
+
+### 15.3 Suggested Store
 
 ```text
 .agent-context/sources/
@@ -986,9 +1066,95 @@ reference add <url-or-path>
 
 This ensures important external material becomes part of the project's source graph and can support fixed knowledge with citations.
 
-## 16. Key User Workflows
+## 16. History Backfill And Conversation Import
 
-### 16.1 Initialize Workspace
+AgentMind must not learn only from conversations that happen after installation. Many projects already have valuable Codex, Claude Code, Cursor, chat, issue, or terminal histories. Users should be able to backfill those histories into AgentMind so prior work can become episodes, wiki knowledge, memory, skills, and capability proposals.
+
+History Backfill turns past conversations and logs into structured AgentMind assets through a reviewable import pipeline.
+
+### 16.1 Supported Inputs
+
+Initial input types:
+
+- Exported chat transcripts as Markdown, JSON, JSONL, or plain text.
+- Claude Code / Codex local conversation exports when available.
+- Existing project handoff notes, `JOURNAL.md`, `CLAUDE.md`, `AGENTS.md`, and session logs.
+- Terminal logs or command transcripts from prior work.
+- GitHub issues, PR discussions, and review comments when explicitly provided or connected.
+
+### 16.2 Backfill Pipeline
+
+```text
+capture history -> segment episodes -> extract signals -> propose assets -> review/promote
+```
+
+- `capture history`: store original transcript/log as a raw source under `.agent-context/sources/history/`.
+- `segment episodes`: split the history into work episodes with goals, actions, decisions, outcomes, and follow-up feedback.
+- `extract signals`: identify durable project facts, user preferences, repeated workflows, failed approaches, tool usage, and candidate skills.
+- `propose assets`: create pending proposals for memory, wiki pages, wiki schema, skills, tools, work items, or references.
+- `review/promote`: user accepts, edits, rejects, or defers each proposal before stable assets change.
+
+### 16.3 Suggested Store
+
+```text
+.agent-context/sources/history/
+  2026-06-agentmind-planning/
+    raw.md
+    metadata.json
+    segments.json
+    extraction.md
+
+.agent-context/episodes/
+  episode_<id>.json
+
+.agent-context/proposals/pending/
+  proposal_<id>.json
+```
+
+Example metadata:
+
+```json
+{
+  "id": "history_202606_agentmind_planning",
+  "type": "conversation_history",
+  "source": "manual_export",
+  "format": "markdown",
+  "status": "captured",
+  "created_at": "2026-06-24T00:00:00Z"
+}
+```
+
+### 16.4 Backfill Commands
+
+Expected workflows:
+
+```text
+history import <path-or-url>
+  -> capture raw history and metadata
+
+history segment <history-id>
+  -> generate candidate episodes
+
+history extract <history-id>
+  -> generate memory/wiki/skill/tool proposals
+
+history review <history-id>
+  -> inspect generated episodes and proposals
+```
+
+For MVP, `history import <file>` can support local Markdown/text/JSON exports first. It should create raw source records and pending proposals rather than directly mutating stable memory/wiki/skills.
+
+### 16.5 Safety Rules
+
+- Imported history is evidence, not truth. Stable assets must still go through proposals.
+- The importer should preserve raw transcripts and source provenance.
+- Sensitive content should be flagged before promotion into public memory or reusable skills.
+- When history contradicts current code or wiki, create contradiction/staleness proposals instead of overwriting.
+- Backfilled skills should start as candidate capabilities until validated in current project context.
+
+## 17. Key User Workflows
+
+### 17.1 Initialize Workspace
 
 User runs setup in a project directory.
 
@@ -999,7 +1165,7 @@ Expected result:
 - Existing repo docs are indexed.
 - Agent adapters are configured.
 
-### 16.2 Work With Any Local Agent
+### 17.2 Work With Any Local Agent
 
 When a supported agent starts in the workspace:
 
@@ -1008,7 +1174,7 @@ When a supported agent starts in the workspace:
 - It can discover available skills and tools.
 - It can query the context layer through MCP or generated files.
 
-### 16.3 End Or Continue Work
+### 17.3 End Or Continue Work
 
 At the end of a task/session:
 
@@ -1022,7 +1188,7 @@ At the next user turn:
 - User feedback on the previous output is interpreted as reward.
 - Reflection worker generates update proposals.
 
-### 16.4 Review Evolution Proposals
+### 17.4 Review Evolution Proposals
 
 User can review pending updates:
 
@@ -1040,7 +1206,7 @@ The product shows:
 
 User can accept, reject, edit, or defer.
 
-### 16.5 Discover And Import Capabilities
+### 17.5 Discover And Import Capabilities
 
 The user can ask the product to find relevant external skills, MCP servers, and tools for the current project.
 
@@ -1051,7 +1217,7 @@ Expected result:
 - The user can import, adapt, ignore, or defer each capability.
 - Imported capabilities remain inactive until their risk policy is satisfied.
 
-### 16.6 Maintain Fixed Knowledge
+### 17.6 Maintain Fixed Knowledge
 
 The user or agent can explicitly maintain the compiled wiki layer.
 
@@ -1064,7 +1230,7 @@ Expected workflows:
 
 The MVP can implement these as proposal-generating commands rather than fully automatic wiki rewrites.
 
-### 16.7 Manage Online Work
+### 17.7 Manage Online Work
 
 The user or agent can explicitly manage active sessions and work ownership.
 
@@ -1078,7 +1244,7 @@ Expected workflows:
 - `work finish <id>`: complete the item and trigger episode/proposal generation.
 - `online end --session <id>`: release leases, write handoff, and close the session.
 
-### 16.8 Track Work And Capture References
+### 17.8 Track Work And Capture References
 
 The user or agent can record project work items and external references.
 
@@ -1089,15 +1255,27 @@ Expected workflows:
 - `work done <id>`: mark complete and propose promotion into wiki/skills/memory when appropriate.
 - `reference add <url-or-path>`: capture an external reference and link it to a task, wiki page, or proposal.
 
-## 17. MVP Scope
+### 17.9 Backfill Past Conversations
+
+The user or agent can import prior conversations and logs to bootstrap AgentMind from existing project history.
+
+Expected workflows:
+
+- `history import <path-or-url>`: capture a prior transcript, chat export, or session log as raw source.
+- `history segment <history-id>`: split imported history into candidate episodes.
+- `history extract <history-id>`: generate proposals for memory/wiki/skills/tools/work items.
+- `review`: accept, edit, reject, or defer generated proposals.
+
+## 18. MVP Scope
 
 The MVP should prove the compounding loop without overbuilding.
 
-### 17.1 Include
+### 18.1 Include
 
 - Local file-backed workspace store.
 - Raw sources directory for source-of-truth inputs.
 - External reference intake metadata and storage.
+- History backfill metadata and local transcript capture.
 - Project work queue with TODO/Doing/Done state.
 - Online work management for sessions, leases, checkpoints, handoffs, and stale recovery metadata.
 - Public memory file.
@@ -1119,8 +1297,9 @@ The MVP should prove the compounding loop without overbuilding.
 - Basic wiki lint/promote proposal generation.
 - Basic commands or data model for work queue and reference capture.
 - Basic commands or data model for online status/start/end and work claim/checkpoint/pause/finish.
+- Basic `history import` command for local transcript files, generating raw source records and pending extraction proposals.
 
-### 17.2 Defer
+### 18.2 Defer
 
 - Full team/org sharing.
 - Cloud sync.
@@ -1134,12 +1313,13 @@ The MVP should prove the compounding loop without overbuilding.
 - Automated internet-wide crawling for skills/tools.
 - Full task-management UI.
 - Full external reference crawler/summarizer.
+- Automatic full-fidelity import from every agent vendor's private history format.
 
-### 17.3 MVP Gap Closure Plan
+### 18.3 MVP Gap Closure Plan
 
 The current MVP is not complete until the guided product loop works inside a real workspace without the user remembering CLI commands. The following gaps must be closed before broader dogfooding.
 
-#### 17.3.1 Claude Code Workflow Skill And Hook
+#### 18.3.1 Claude Code Workflow Skill And Hook
 
 Problem: `connect claude` cannot rely only on a `CLAUDE.md` managed block. Claude Code should get a project-level workflow skill and a lightweight SessionEnd fallback, similar to the embodied-intelligence workspace pattern.
 
@@ -1157,7 +1337,7 @@ Acceptance criteria:
 - Existing `CLAUDE.md`, `.claude/skills`, and `.claude/settings.json` content is not overwritten outside AgentMind-managed blocks or generated files.
 - Re-running `connect claude` is idempotent.
 
-#### 17.3.2 Work Close To Episode And Proposal Candidates
+#### 18.3.2 Work Close To Episode And Proposal Candidates
 
 Problem: `work finish` and `work pause` currently update work state and handoff, but do not yet feed the self-evolution loop.
 
@@ -1175,7 +1355,7 @@ Acceptance criteria:
 - `review` can show proposals generated from completed work.
 - Done work items can be traced to outcomes and candidate promotions.
 
-#### 17.3.3 Stale Session Detection And Recovery
+#### 18.3.3 Stale Session Detection And Recovery
 
 Problem: `online status` records sessions and leases, but does not yet classify stale sessions or guide recovery.
 
@@ -1192,7 +1372,34 @@ Acceptance criteria:
 - A recoverable lease can be explicitly released or transferred by user-approved action.
 - No work item is silently stolen from a non-stale active session.
 
-## 18. Competitive/Reference Landscape
+## 19. Current MVP Implementation Status
+
+The current code implements a CLI-first, file-backed AgentMind MVP with Codex and Claude Code adapters. It is not a daemon and does not replace a local agent. It guides agents through generated entry files, skills, manuals, MCP tools, and local state files.
+
+Implemented and expected to work:
+
+- `agentmind setup/doctor/init/status`: safely initializes `.agent-context/` and connects Codex and Claude Code. Existing repos get an agent-led scan; important paths are not hardcoded.
+- Online/work lifecycle: `online start/status/end`, `work add/list/claim/checkpoint/pause/finish/abandon`, and `spec create`.
+- Handoff into the evolution loop: `work finish/pause` creates episodes and pending proposals.
+- Reference/history capture: `reference add`, `history import`, and `sources list` register important URLs, local references, and past conversations as raw sources for extraction.
+- Repository scans: `scan create/list/add-source/finish` lets the agent choose relevant sources, record reasons, and create an extraction proposal.
+- Cross-harness skills: canonical skills live at `.agent-context/skills/<skill-id>/SKILL.md`; `skill discover --from claude` records candidates; `skill promote` promotes reviewed skills into canonical AgentMind skills; `skill render` generates the Codex index and Claude Code skill views.
+- Basic MCP tools: read public memory, search wiki, list skills/proposals/sources/scans/capabilities, record episodes/rewards.
+- Agent manual: `.agent-context/AGENT_MANUAL.md` tells agents to start a session, inspect scans/sources/skills, create/claim work, checkpoint, and hand off.
+
+Still TODO and should not be represented as completed:
+
+- Automatic bulk extraction from Codex/Claude local conversation databases.
+- Reference fetch capability adapter: reuse public web-reader/browser/defuddle/Firecrawl/Jina Reader skills/tools/MCP to fetch URL content while recording provenance, snapshots, permissions, risk, and extraction proposals.
+- Deterministic and LLM-assisted wiki lint implementation.
+- Incremental diffing when wiki/skills already exist and only changed sources should be regenerated.
+- Proposal apply: accepting a proposal does not yet automatically patch wiki/skill/tool files.
+- MCP/tool registry permission and risk lifecycle.
+- Automatic validation that a skill update works before activation.
+
+MVP acceptance target: after installing AgentMind in an existing repo, the user can open Codex or Claude Code and say “开始”; the agent reads the AgentMind manual, starts a session, reports work state and open scans, guides the user through repository scan or work continuation, and writes handoff/episode/proposal records at the end.
+
+## 20. Competitive/Reference Landscape
 
 Relevant projects and lessons:
 
@@ -1210,7 +1417,7 @@ Relevant projects and lessons:
 
 The product opportunity is to combine these ideas into a coherent, local-first project intelligence layer focused on coding agents.
 
-## 19. Success Metrics
+## 21. Success Metrics
 
 Early product metrics:
 
@@ -1226,6 +1433,8 @@ Early product metrics:
 - Reduction in manual repeated tool setup across projects.
 - Number of important external references captured and cited.
 - Percentage of Done work items linked to episodes and outcomes.
+- Number of useful proposals generated from backfilled history.
+- Percentage of accepted backfill proposals that are reused in later work.
 
 Quality metrics:
 
@@ -1237,7 +1446,7 @@ Quality metrics:
 - Capability deprecation rate after failed or risky use.
 - Number of Done items promoted into wiki, schema, skills, or memory.
 
-## 20. Open Questions
+## 22. Open Questions
 
 - How much reflection should happen synchronously at the start of each turn versus asynchronously after the episode?
 - What is the right threshold for auto-staging versus requiring explicit user review?
@@ -1255,8 +1464,10 @@ Quality metrics:
 - How strict should leases and heartbeat recovery be in a single-user local-first MVP?
 - Which external references should be snapshotted locally versus stored only as metadata and citations?
 - What source classes are needed for references beyond `reference`, such as `ours`, `competitor`, `partner`, `paper`, `repo`, or `standard`?
+- Which history formats should be supported first: Markdown exports, JSONL transcripts, Claude Code local state, Codex local state, GitHub discussions, or terminal logs?
+- How should the system detect and redact sensitive content during history backfill?
 
-## 21. Product Positioning
+## 23. Product Positioning
 
 Working name: **AgentMind**.
 

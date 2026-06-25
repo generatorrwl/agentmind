@@ -40,15 +40,19 @@ Go to the project where you want local agents to share memory, work state, wiki,
 
 ```bash
 cd /path/to/your-project
-agentmind init
-agentmind connect codex
-agentmind connect claude
+agentmind setup
+agentmind doctor
 ```
 
 This creates or updates:
 
 ```text
 .agent-context/
+.agent-context/AGENT_MANUAL.md
+.agent-context/sources/index.json
+.agent-context/scans/index.json
+.agent-context/skills/agentmind-workflow/SKILL.md
+.agent-context/adapters/codex/SKILLS.md
 AGENTS.md
 CLAUDE.md
 .claude/skills/agentmind-workflow/SKILL.md
@@ -61,6 +65,7 @@ These commands are designed to be safe to rerun:
 - `init` only creates missing AgentMind store files.
 - `connect codex` updates the AgentMind managed block in `AGENTS.md` and adapter metadata.
 - `connect claude` updates the AgentMind managed block in `CLAUDE.md`, generated AgentMind Claude skill/hook files, and hook registration.
+- `setup` runs the safe initialization and adapter connection flow. In an existing repo, it also creates an agent-led scan task under `.agent-context/scans/`.
 
 AgentMind should not overwrite unrelated user content outside AgentMind-managed blocks or generated AgentMind files.
 
@@ -116,14 +121,57 @@ agentmind online end --session codex-main
 
 `work finish` and `work pause` write handoffs and create episode/proposal candidates so completed work can feed the review and promotion loop.
 
+## Existing Repositories
+
+For an existing repo, setup creates a scan instruction file. AgentMind does not hardcode which paths matter. The agent reads the repo, selects relevant sources, and records why they matter:
+
+```bash
+agentmind scan list
+agentmind scan add-source <scan-id> README.md --type docs --reason "Project entrypoint and setup workflow"
+agentmind scan add-source <scan-id> package.json --type config --reason "Commands and package metadata"
+agentmind scan finish <scan-id> --summary "Extract overview, workflows, commands, and skills"
+```
+
+Finishing a scan creates an extraction proposal. The agent should then update `.agent-context/wiki/`, `.agent-context/skills/`, memory, or tool config with source citations.
+
+## References And History
+
+When a user gives an important URL, paper, gist, design doc, or past conversation, capture it first:
+
+```bash
+agentmind reference add https://example.com/reference --reason "Relevant fixed knowledge reference"
+agentmind history import ./past-session.md --reason "Backfill previous project decisions"
+```
+
+These commands store source records and create proposals for fixed wiki knowledge, memory, skill, or tool extraction. URL content is not fetched automatically by the local CLI; an agent with browser/network access should read it and preserve citations.
+
+## Skills Across Harnesses
+
+Canonical skills live in `.agent-context/skills/<skill-id>/SKILL.md`. Adapter views are generated from canonical skills:
+
+```bash
+agentmind skill discover --from claude
+agentmind skill promote <capability-id|skill-id>
+agentmind skill render
+```
+
+`discover` records existing `.claude/skills/*` as candidates. `promote` copies a reviewed skill into AgentMind canonical skills and re-renders Codex and Claude Code views.
+
 ## Useful Commands
 
 ```bash
 agentmind status
+agentmind setup --mode existing
+agentmind doctor
 agentmind online status --stale-minutes 1440
 agentmind work list
 agentmind review
 agentmind import skill /path/to/skill-or-SKILL.md
+agentmind reference add <path-or-url> --reason "important source"
+agentmind history import <file> --reason "backfill previous conversations"
+agentmind scan list
+agentmind skill discover --from claude
+agentmind skill promote <capability-id|skill-id>
 agentmind record reward --polarity positive --evidence "User accepted the result"
 agentmind reflect latest
 agentmind mcp
@@ -164,7 +212,6 @@ Then test from another project:
 
 ```bash
 cd /path/to/test-project
-agentmind init
-agentmind connect codex
-agentmind connect claude
+agentmind setup
+agentmind doctor
 ```

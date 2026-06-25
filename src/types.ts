@@ -6,6 +6,10 @@ export type WorkPriority = "low" | "medium" | "high";
 
 export type RewardPolarity = "positive" | "negative" | "mixed" | "neutral";
 
+export type SourceKind = "reference" | "history" | "repository" | "episode" | "fixed_knowledge";
+
+export type SourceContentType = "url" | "file" | "directory" | "text";
+
 export interface EpisodeRecord {
   id: string;
   workspace: string;
@@ -44,6 +48,46 @@ export interface UpdateProposal {
   status: "pending_review" | "accepted" | "rejected";
   patch?: string;
   created_at: string;
+}
+
+export interface SourceRecord {
+  id: string;
+  kind: SourceKind;
+  content_type: SourceContentType;
+  title: string;
+  source: {
+    path?: string;
+    url?: string;
+    original_path?: string;
+  };
+  snapshot_path?: string;
+  summary?: string;
+  reason?: string;
+  tags: string[];
+  status: "captured" | "queued_for_extraction" | "extracted" | "archived";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScanSource {
+  id: string;
+  path: string;
+  type: "code" | "docs" | "config" | "tests" | "agent_context" | "history" | "reference" | "other";
+  reason: string;
+  status: "candidate" | "selected" | "skipped" | "extracted";
+  added_at: string;
+}
+
+export interface ScanRecord {
+  id: string;
+  goal: string;
+  mode: "new" | "existing" | "manual";
+  status: "open" | "finished";
+  sources: ScanSource[];
+  instructions_path: string;
+  created_at: string;
+  updated_at: string;
+  finished_at?: string;
 }
 
 export interface CapabilityRecord {

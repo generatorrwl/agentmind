@@ -18,6 +18,14 @@ export interface StorePaths {
   proposalsPending: string;
   proposalsAccepted: string;
   proposalsRejected: string;
+  sources: string;
+  sourceIndex: string;
+  sourcesExternal: string;
+  sourcesHistory: string;
+  sourcesRepository: string;
+  sourcesFixedKnowledge: string;
+  scans: string;
+  scanIndex: string;
   capabilities: string;
   capabilityRegistry: string;
   adapters: string;
@@ -47,6 +55,14 @@ export function paths(root: string): StorePaths {
     proposalsPending: path.join(store, "proposals", "pending"),
     proposalsAccepted: path.join(store, "proposals", "accepted"),
     proposalsRejected: path.join(store, "proposals", "rejected"),
+    sources: path.join(store, "sources"),
+    sourceIndex: path.join(store, "sources", "index.json"),
+    sourcesExternal: path.join(store, "sources", "external"),
+    sourcesHistory: path.join(store, "sources", "history"),
+    sourcesRepository: path.join(store, "sources", "repository"),
+    sourcesFixedKnowledge: path.join(store, "sources", "fixed-knowledge"),
+    scans: path.join(store, "scans"),
+    scanIndex: path.join(store, "scans", "index.json"),
     capabilities: path.join(store, "capabilities"),
     capabilityRegistry: path.join(store, "capabilities", "registry.json"),
     adapters: path.join(store, "adapters"),
@@ -74,6 +90,11 @@ export async function initStore(root: string): Promise<string[]> {
     p.proposalsPending,
     p.proposalsAccepted,
     p.proposalsRejected,
+    p.sourcesExternal,
+    p.sourcesHistory,
+    p.sourcesRepository,
+    p.sourcesFixedKnowledge,
+    p.scans,
     p.capabilities,
     p.work,
     p.workHandoffs,
@@ -94,6 +115,7 @@ export async function initStore(root: string): Promise<string[]> {
     [path.join(p.wiki, "workflows.md"), "---\ntype: Project Workflows\ntitle: Project Workflows\ndescription: Repeatable workflows for this workspace.\nstatus: active\n---\n\n# Project Workflows\n\n"],
     [path.join(p.wiki, "gotchas.md"), "---\ntype: Project Gotchas\ntitle: Project Gotchas\ndescription: Known pitfalls and failure modes.\nstatus: active\n---\n\n# Project Gotchas\n\n"],
     [path.join(p.wiki, "log.md"), `# Wiki Update Log\n\n## ${nowIso().slice(0, 10)}\n- **Creation**: Initialized AgentMind project wiki.\n`],
+    [path.join(p.wiki, "fixed-knowledge.md"), "---\ntype: Fixed Knowledge Guide\ntitle: Fixed Knowledge Guide\ndescription: Criteria for promoting raw sources into stable project wiki and capability assets.\nstatus: active\n---\n\n# Fixed Knowledge Guide\n\nFixed knowledge is durable project understanding compiled from raw sources, references, history, episodes, and verification.\n\nPromote content when it is stable, reusable, source-linked, and likely to improve future work. Keep volatile notes in sources, scans, specs, or episodes until verified.\n\n## Promotion Criteria\n\n- The fact or workflow appears in source-of-truth files, accepted references, or repeated successful episodes.\n- The content helps future agents avoid re-deriving project understanding.\n- The claim can cite source paths, URLs, history imports, or episode ids.\n- Contradictions and confidence are recorded instead of hidden.\n\n## Candidate Outputs\n\n- Wiki page update for stable project facts and workflows.\n- Skill update for repeatable executable behavior.\n- Memory update for durable user/project operating preferences.\n- Tool rule update for reliable command or MCP usage.\n"],
     [path.join(p.work, "index.md"), "# Project Work\n\nAgentMind-managed work queue and handoff surface.\n"],
     [path.join(p.tools, "mcp.json"), "{\n  \"mcpServers\": {}\n}\n"],
     [path.join(p.tools, "commands.yaml"), "# Project command registry.\ncommands: []\n"],
@@ -105,6 +127,14 @@ export async function initStore(root: string): Promise<string[]> {
   if (!(await exists(p.capabilityRegistry))) {
     await writeJson(p.capabilityRegistry, { capabilities: [] });
     created.push(path.relative(root, p.capabilityRegistry));
+  }
+  if (!(await exists(p.sourceIndex))) {
+    await writeJson(p.sourceIndex, { sources: [] });
+    created.push(path.relative(root, p.sourceIndex));
+  }
+  if (!(await exists(p.scanIndex))) {
+    await writeJson(p.scanIndex, { scans: [] });
+    created.push(path.relative(root, p.scanIndex));
   }
   if (!(await exists(p.workItems))) {
     await writeJson(p.workItems, { items: [] });
@@ -126,6 +156,8 @@ export async function storeStatus(root: string): Promise<Record<string, unknown>
   const pending = await listJsonFiles(p.proposalsPending);
   const episodes = await listJsonFiles(p.episodes);
   const rewards = await listJsonFiles(p.rewards);
+  const sources = await readJson<{ sources: unknown[] }>(p.sourceIndex, { sources: [] });
+  const scans = await readJson<{ scans: Array<{ status?: string }> }>(p.scanIndex, { scans: [] });
   const skills = await listMarkdownFiles(p.skills);
   const registry = await readCapabilityRegistry(root);
   const workItems = await readJson<{ items: Array<{ status?: string }> }>(p.workItems, { items: [] });
@@ -136,6 +168,12 @@ export async function storeStatus(root: string): Promise<Record<string, unknown>
     episodes: episodes.length,
     rewards: rewards.length,
     pending_proposals: pending.length,
+    sources: sources.sources.length,
+    scans: {
+      total: scans.scans.length,
+      open: scans.scans.filter((item) => item.status === "open").length,
+      finished: scans.scans.filter((item) => item.status === "finished").length,
+    },
     skills: skills.length,
     capabilities: registry.capabilities.length,
     work: {

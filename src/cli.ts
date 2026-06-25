@@ -1,16 +1,20 @@
 import path from "node:path";
 import { connectHarness } from "./adapters.js";
-import { importLocalSkill } from "./capabilities.js";
+import { discoverClaudeSkills, importLocalSkill, listCapabilities, promoteSkill, renderProjectSkills } from "./capabilities.js";
 import { startMcpServer } from "./mcp.js";
 import { reflectLatest } from "./reflect.js";
 import { listPendingProposals, moveProposal } from "./review.js";
+import { addScanSource, createScan, finishScan, listScans } from "./scan.js";
+import { doctorWorkspace, setupWorkspace } from "./setup.js";
+import { addReference, importHistory, listSources } from "./sources.js";
 import { initStore, storeStatus, writeEpisode, writeReward } from "./store.js";
-import { AgentHarness } from "./types.js";
+import { AgentHarness, ScanSource } from "./types.js";
 import { onlineEnd, onlineStart, onlineStatus, specCreate, workAbandon, workAdd, workCheckpoint, workClaim, workFinish, workList, workPause } from "./work.js";
 
 export async function runCli(argv: string[]): Promise<void> {
   const { args, root } = parseArgs(argv);
-  const [command, subcommand, value] = args;
+  const [command, subcommand] = args;
+  const value = positionalArg(args, 2);
 
   if (!command || command === "help" || command === "--help") {
     printHelp();
@@ -21,6 +25,16 @@ export async function runCli(argv: string[]): Promise<void> {
     const created = await initStore(root);
     console.log(`AgentMind initialized at ${path.join(root, ".agent-context")}`);
     if (created.length > 0) console.log(`Created:\n${created.map((item) => `- ${item}`).join("\n")}`);
+    return;
+  }
+
+  if (command === "setup") {
+    console.log(JSON.stringify(await setupWorkspace(root, { mode: parseSetupMode(readOption(args, "--mode")) }), null, 2));
+    return;
+  }
+
+  if (command === "doctor") {
+    console.log(JSON.stringify(await doctorWorkspace(root), null, 2));
     return;
   }
 
@@ -127,6 +141,81 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === "skill" && subcommand === "list") {
+    console.log(JSON.stringify({ capabilities: await listCapabilities(root) }, null, 2));
+    return;
+  }
+
+  if (command === "skill" && subcommand === "discover") {
+    const source = readOption(args, "--from") ?? value ?? "claude";
+    if (source !== "claude" && source !== "claude-code") throw new Error("Usage: agentmind skill discover --from claude");
+    console.log(JSON.stringify(await discoverClaudeSkills(root), null, 2));
+    return;
+  }
+
+  if (command === "skill" && subcommand === "promote") {
+    if (!value) throw new Error("Usage: agentmind skill promote <capability-id|skill-id>");
+    console.log(JSON.stringify(await promoteSkill(root, value), null, 2));
+    return;
+  }
+
+  if (command === "skill" && subcommand === "render") {
+    console.log(JSON.stringify(await renderProjectSkills(root), null, 2));
+    return;
+  }
+
+  if (command === "reference" && subcommand === "add") {
+    if (!value) throw new Error("Usage: agentmind reference add <path-or-url> [--title <text>] [--reason <text>] [--tag <tag>]");
+    console.log(JSON.stringify(await addReference(root, value, { title: readOption(args, "--title"), reason: readOption(args, "--reason"), tags: readRepeatedOptions(args, "--tag") }), null, 2));
+    return;
+  }
+
+  if (command === "reference" && subcommand === "list") {
+    console.log(JSON.stringify({ sources: (await listSources(root)).filter((source) => source.kind === "reference") }, null, 2));
+    return;
+  }
+
+  if (command === "history" && subcommand === "import") {
+    if (!value) throw new Error("Usage: agentmind history import <file> [--title <text>] [--reason <text>] [--tag <tag>]");
+    console.log(JSON.stringify(await importHistory(root, value, { title: readOption(args, "--title"), reason: readOption(args, "--reason"), tags: readRepeatedOptions(args, "--tag") }), null, 2));
+    return;
+  }
+
+  if (command === "history" && subcommand === "list") {
+    console.log(JSON.stringify({ sources: (await listSources(root)).filter((source) => source.kind === "history") }, null, 2));
+    return;
+  }
+
+  if (command === "sources" && subcommand === "list") {
+    console.log(JSON.stringify({ sources: await listSources(root) }, null, 2));
+    return;
+  }
+
+  if (command === "scan" && subcommand === "create") {
+    console.log(JSON.stringify(await createScan(root, { goal: value ?? readOption(args, "--goal"), mode: parseScanMode(readOption(args, "--mode")) }), null, 2));
+    return;
+  }
+
+  if (command === "scan" && subcommand === "list") {
+    console.log(JSON.stringify({ scans: await listScans(root) }, null, 2));
+    return;
+  }
+
+  if (command === "scan" && subcommand === "add-source") {
+    const sourcePath = positionalArg(args, 3);
+    if (!value || !sourcePath) throw new Error("Usage: agentmind scan add-source <scan-id> <path> --reason <text> [--type <type>]");
+    const reason = readOption(args, "--reason");
+    if (!reason) throw new Error("scan add-source requires --reason <text>");
+    console.log(JSON.stringify(await addScanSource(root, value, { sourcePath, type: parseScanSourceType(readOption(args, "--type")), reason }), null, 2));
+    return;
+  }
+
+  if (command === "scan" && subcommand === "finish") {
+    if (!value) throw new Error("Usage: agentmind scan finish <scan-id> [--summary <text>]");
+    console.log(JSON.stringify(await finishScan(root, value, { summary: readOption(args, "--summary") }), null, 2));
+    return;
+  }
+
   if (command === "reflect" && subcommand === "latest") {
     const proposal = await reflectLatest(root);
     if (!proposal) console.log("No episode or reward signal found to reflect on.");
@@ -217,6 +306,21 @@ function parseWorkStatus(value: string | undefined): "todo" | "doing" | "done" |
   return value === "todo" || value === "doing" || value === "done" || value === "paused" || value === "abandoned" ? value : undefined;
 }
 
+function parseSetupMode(value: string | undefined): "auto" | "new" | "existing" | undefined {
+  if (!value) return undefined;
+  return value === "auto" || value === "new" || value === "existing" ? value : undefined;
+}
+
+function parseScanMode(value: string | undefined): "new" | "existing" | "manual" | undefined {
+  if (!value) return undefined;
+  return value === "new" || value === "existing" || value === "manual" ? value : undefined;
+}
+
+function parseScanSourceType(value: string | undefined): ScanSource["type"] | undefined {
+  if (!value) return undefined;
+  return value === "code" || value === "docs" || value === "config" || value === "tests" || value === "agent_context" || value === "history" || value === "reference" || value === "other" ? value : undefined;
+}
+
 function parseOptionalNumber(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
@@ -226,6 +330,11 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
 function readOption(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function positionalArg(args: string[], index: number): string | undefined {
+  const value = args[index];
+  return value && !value.startsWith("--") ? value : undefined;
 }
 
 function readRepeatedOptions(args: string[], flag: string): string[] {
@@ -248,6 +357,8 @@ function printHelp(): void {
   console.log(`AgentMind
 
 Usage:
+  agentmind setup [--mode <auto|new|existing>] [--root <path>]
+  agentmind doctor [--root <path>]
   agentmind init [--root <path>]
   agentmind status [--root <path>]
   agentmind online start --harness <codex|claude> [--session <id>] [--focus <text>] [--stale-minutes <n>] [--root <path>]
@@ -263,6 +374,19 @@ Usage:
   agentmind spec create <title> [--work <id>] [--root <path>]
   agentmind connect <codex|claude> [--root <path>]
   agentmind import skill <path> [--root <path>]
+  agentmind skill list [--root <path>]
+  agentmind skill discover --from claude [--root <path>]
+  agentmind skill promote <capability-id|skill-id> [--root <path>]
+  agentmind skill render [--root <path>]
+  agentmind reference add <path-or-url> [--title <text>] [--reason <text>] [--tag <tag>] [--root <path>]
+  agentmind reference list [--root <path>]
+  agentmind history import <file> [--title <text>] [--reason <text>] [--tag <tag>] [--root <path>]
+  agentmind history list [--root <path>]
+  agentmind sources list [--root <path>]
+  agentmind scan create [goal] [--mode <new|existing|manual>] [--root <path>]
+  agentmind scan list [--root <path>]
+  agentmind scan add-source <scan-id> <path> --reason <text> [--type <code|docs|config|tests|agent_context|history|reference|other>] [--root <path>]
+  agentmind scan finish <scan-id> [--summary <text>] [--root <path>]
   agentmind record episode <goal> [--agent <name>] [--outcome <success|failed|unknown>] [--root <path>]
   agentmind record reward [--polarity <positive|negative|mixed|neutral>] [--episode <id>] [--evidence <text>] [--cause <text>] [--root <path>]
   agentmind reflect latest [--root <path>]

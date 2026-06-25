@@ -9,20 +9,21 @@ Your job is to make AgentMind active for this workspace before doing project wor
 When you enter this workspace, run this sequence unless the user explicitly asks you not to initialize AgentMind:
 
 ```bash
-agentmind init
-agentmind connect codex
-agentmind connect claude
+agentmind setup
+agentmind doctor
 ```
 
 If `agentmind` is not available, tell the user to install it with `npm install -g agentmind` or, when developing AgentMind itself, to run `npm install && npm run build && npm link` in the AgentMind source checkout.
 
 These commands are safe to rerun:
 
-- `init` only creates missing AgentMind store files.
-- `connect codex` updates only the AgentMind managed block in `AGENTS.md` and adapter metadata.
-- `connect claude` updates only the AgentMind managed block in `CLAUDE.md`, generated AgentMind Claude skill/hook files, and hook registration.
+- `setup` creates missing AgentMind store files and connects Codex/Claude adapters.
+- `doctor` verifies that AgentMind entrypoints, generated skills, hooks, and adapter views are present.
+- Under the hood, setup is equivalent to safe `init` + adapter connection.
 
 Do not overwrite unrelated user content outside AgentMind-managed blocks or generated AgentMind files.
+
+After setup, read `.agent-context/AGENT_MANUAL.md` for the full operating protocol.
 
 ## After Bootstrap
 
@@ -49,8 +50,51 @@ Then report to the user:
 - doing work
 - resumable work
 - pending proposals
+- open scans
+- captured references/history
+- discovered/promoted skills
 
-Ask whether to continue existing work, create new work, or create a spec.
+Inspect those surfaces first:
+
+```bash
+agentmind scan list
+agentmind sources list
+agentmind skill list
+```
+
+Ask whether to continue existing work, run an open repository scan, process proposals, import references/history, create new work, or create a spec.
+
+## Existing Repo Scan
+
+For existing repos, `setup` creates an agent-led scan. Do not assume fixed paths. Read the scan instruction file, inspect the repo, then register sources with reasons:
+
+```bash
+agentmind scan add-source <scan-id> <path> --type <type> --reason "<why this matters>"
+agentmind scan finish <scan-id> --summary "<what should be extracted>"
+```
+
+After finishing a scan, extract durable fixed knowledge into wiki pages and repeatable capability into canonical skills with citations.
+
+## References And History
+
+When the user provides an external reference or asks to backfill from past conversation, capture it before extracting:
+
+```bash
+agentmind reference add <path-or-url> --reason "<why it matters>"
+agentmind history import <file> --reason "<backfill goal>"
+```
+
+Use generated proposals to decide what should update wiki, memory, skill, or tool rules.
+
+## Skill Promotion
+
+Discover harness-local skills, then promote reviewed skills into AgentMind canonical skills before treating them as cross-harness capability:
+
+```bash
+agentmind skill discover --from claude
+agentmind skill promote <capability-id|skill-id>
+agentmind skill render
+```
 
 ## Start Work
 
@@ -124,4 +168,6 @@ If stale work exists, ask the user before taking over, pausing, or abandoning it
 - Do not treat CLI commands as the user experience. They are the runtime API that you call behind the scenes.
 - Do not directly copy one harness's private memory or skills into another harness.
 - Promote useful behavior into AgentMind canonical assets first, then render adapters.
+- Treat discovered skills as candidates until promoted.
+- Capture references/history before extracting fixed knowledge from them.
 - Stable memory/wiki/skill/tool changes should go through proposals unless the user explicitly requests a direct edit.

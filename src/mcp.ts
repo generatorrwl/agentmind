@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { listCapabilities } from "./capabilities.js";
 import { paths, searchWiki, listSkills, writeEpisode, writeReward } from "./store.js";
 import { listPendingProposals } from "./review.js";
+import { listScans } from "./scan.js";
+import { listSources } from "./sources.js";
 
 interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -87,6 +90,15 @@ async function callTool(root: string, name: string, args: Record<string, unknown
   if (name === "list_pending_proposals") {
     return { proposals: await listPendingProposals(root) };
   }
+  if (name === "list_sources") {
+    return { sources: await listSources(root) };
+  }
+  if (name === "list_scans") {
+    return { scans: await listScans(root) };
+  }
+  if (name === "list_capabilities") {
+    return { capabilities: await listCapabilities(root) };
+  }
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -98,6 +110,9 @@ function tools(): unknown[] {
     tool("record_episode", "Record a completed or in-progress work episode.", { goal: { type: "string" }, agent: { type: "string" }, outcome: { type: "string", enum: ["success", "failed", "unknown"] } }, ["goal"]),
     tool("record_reward", "Record a reward signal for an episode.", { polarity: { type: "string", enum: ["positive", "negative", "mixed", "neutral"] }, target_episode: { type: "string" }, evidence: { type: "array", items: { type: "string" } }, suspected_causes: { type: "array", items: { type: "string" } } }),
     tool("list_pending_proposals", "List pending AgentMind update proposals.", {}),
+    tool("list_sources", "List captured references, histories, and repository sources.", {}),
+    tool("list_scans", "List repository scans and selected source inventory.", {}),
+    tool("list_capabilities", "List AgentMind capability records, including discovered and promoted skills.", {}),
   ];
 }
 
