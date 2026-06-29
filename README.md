@@ -77,19 +77,19 @@ AgentMind should not overwrite unrelated user content outside AgentMind-managed 
 When developing AgentMind itself from this repository, rebuild before asking another agent session to initialize or refresh the repo:
 
 ```bash
-cd /Users/renwanlan/Documents/memory-helper
+cd <agentmind-source-root>
 npm run build
-node dist/index.js setup --root /Users/renwanlan/Documents/memory-helper
-node dist/index.js doctor --root /Users/renwanlan/Documents/memory-helper
-node dist/index.js skill render --root /Users/renwanlan/Documents/memory-helper
+node dist/index.js setup --root "$(pwd)"
+node dist/index.js doctor --root "$(pwd)"
+node dist/index.js skill render --root "$(pwd)"
 ```
 
 If this checkout is linked as `agentmind`, the same flow can use the CLI name:
 
 ```bash
-agentmind setup --root /Users/renwanlan/Documents/memory-helper
-agentmind doctor --root /Users/renwanlan/Documents/memory-helper
-agentmind skill render --root /Users/renwanlan/Documents/memory-helper
+agentmind setup --root "$(pwd)"
+agentmind doctor --root "$(pwd)"
+agentmind skill render --root "$(pwd)"
 ```
 
 ## Start Working
@@ -119,10 +119,11 @@ To start the discussion-first Project Design packet:
 agentmind project design
 ```
 
-For this repository, an initial Project Design packet may already exist:
+If a Project Design packet already exists, inspect it instead of creating a duplicate:
 
 ```bash
-agentmind project design status project_design_ced726ff4c --root /Users/renwanlan/Documents/memory-helper
+agentmind project design list
+agentmind project design status <design-id>
 ```
 
 After the user explicitly confirms the chosen profile/schema/skill direction in `user-decisions.md`, proposals can be created:

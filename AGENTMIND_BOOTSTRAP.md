@@ -17,17 +17,17 @@ When you are inside the AgentMind source repository itself, rebuild before using
 
 ```bash
 npm run build
-node dist/index.js setup --root /Users/renwanlan/Documents/memory-helper
-node dist/index.js doctor --root /Users/renwanlan/Documents/memory-helper
-node dist/index.js skill render --root /Users/renwanlan/Documents/memory-helper
+node dist/index.js setup --root "$(pwd)"
+node dist/index.js doctor --root "$(pwd)"
+node dist/index.js skill render --root "$(pwd)"
 ```
 
 If the source checkout is linked as `agentmind`, the equivalent command form is:
 
 ```bash
-agentmind setup --root /Users/renwanlan/Documents/memory-helper
-agentmind doctor --root /Users/renwanlan/Documents/memory-helper
-agentmind skill render --root /Users/renwanlan/Documents/memory-helper
+agentmind setup --root "$(pwd)"
+agentmind doctor --root "$(pwd)"
+agentmind skill render --root "$(pwd)"
 ```
 
 If `agentmind` is not available, tell the user to install it with `npm install -g agentmind` or, when developing AgentMind itself, to run `npm install && npm run build && npm link` in the AgentMind source checkout.
@@ -111,10 +111,11 @@ agentmind project design list
 agentmind project design status <design-id>
 ```
 
-For this repository, the current packet may be:
+If a Project Design packet already exists, inspect it instead of creating a duplicate:
 
 ```bash
-agentmind project design status project_design_ced726ff4c --root /Users/renwanlan/Documents/memory-helper
+agentmind project design list
+agentmind project design status <design-id>
 ```
 
 Before creating stable-asset proposals, record explicit confirmation in the packet's `user-decisions.md`:
