@@ -51,11 +51,16 @@ This creates or updates:
 .agent-context/AGENT_MANUAL.md
 .agent-context/sources/index.json
 .agent-context/scans/index.json
+.agent-context/project-design/index.json
 .agent-context/skills/agentmind-workflow/SKILL.md
+.agent-context/skills/agentmind-worker/SKILL.md
+.agent-context/skills/agentmind-extraction/SKILL.md
 .agent-context/adapters/codex/SKILLS.md
 AGENTS.md
 CLAUDE.md
 .claude/skills/agentmind-workflow/SKILL.md
+.claude/skills/agentmind-worker/SKILL.md
+.claude/skills/agentmind-extraction/SKILL.md
 .claude/hooks/agentmind-session-end.sh
 .claude/settings.json
 ```
@@ -69,6 +74,24 @@ These commands are designed to be safe to rerun:
 
 AgentMind should not overwrite unrelated user content outside AgentMind-managed blocks or generated AgentMind files.
 
+When developing AgentMind itself from this repository, rebuild before asking another agent session to initialize or refresh the repo:
+
+```bash
+cd /Users/renwanlan/Documents/memory-helper
+npm run build
+node dist/index.js setup --root /Users/renwanlan/Documents/memory-helper
+node dist/index.js doctor --root /Users/renwanlan/Documents/memory-helper
+node dist/index.js skill render --root /Users/renwanlan/Documents/memory-helper
+```
+
+If this checkout is linked as `agentmind`, the same flow can use the CLI name:
+
+```bash
+agentmind setup --root /Users/renwanlan/Documents/memory-helper
+agentmind doctor --root /Users/renwanlan/Documents/memory-helper
+agentmind skill render --root /Users/renwanlan/Documents/memory-helper
+```
+
 ## Start Working
 
 Open Codex or Claude Code in your project and say:
@@ -78,6 +101,37 @@ Open Codex or Claude Code in your project and say:
 ```
 
 The agent should start an AgentMind online session, report active/resumable work, and ask whether to continue existing work, create new work, or create a spec.
+
+The agent should also inspect `agentmind doctor` or `agentmind status`. If Project Design is incomplete, it should explain that the project is missing one or more high-impact project rules:
+
+```text
+.agent-context/profile.md
+.agent-context/wiki/schema.md
+.agent-context/skills/project-extraction/SKILL.md
+.agent-context/skills/project-workflow/SKILL.md
+```
+
+The agent should ask whether to start Project Design. It must not generate final schema or project-specific skills without user confirmation.
+
+To start the discussion-first Project Design packet:
+
+```bash
+agentmind project design
+```
+
+For this repository, an initial Project Design packet may already exist:
+
+```bash
+agentmind project design status project_design_ced726ff4c --root /Users/renwanlan/Documents/memory-helper
+```
+
+After the user explicitly confirms the chosen profile/schema/skill direction in `user-decisions.md`, proposals can be created:
+
+```bash
+agentmind project design propose <design-id>
+```
+
+`propose` creates pending proposals only. Review/accept/apply remains separate.
 
 Behind the scenes, the agent will call commands like:
 
@@ -166,6 +220,10 @@ agentmind doctor
 agentmind online status --stale-minutes 1440
 agentmind work list
 agentmind review
+agentmind project design
+agentmind project design list
+agentmind project design status <design-id>
+agentmind project design propose <design-id>
 agentmind import skill /path/to/skill-or-SKILL.md
 agentmind reference add <path-or-url> --reason "important source"
 agentmind history import <file> --reason "backfill previous conversations"

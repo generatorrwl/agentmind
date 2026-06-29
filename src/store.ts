@@ -9,7 +9,9 @@ export interface StorePaths {
   root: string;
   store: string;
   memory: string;
+  profile: string;
   wiki: string;
+  wikiSchema: string;
   skills: string;
   tools: string;
   episodes: string;
@@ -18,6 +20,7 @@ export interface StorePaths {
   proposalsPending: string;
   proposalsAccepted: string;
   proposalsRejected: string;
+  proposalsApplied: string;
   sources: string;
   sourceIndex: string;
   sourcesExternal: string;
@@ -38,6 +41,13 @@ export interface StorePaths {
   onlineLeases: string;
   onlineHeartbeats: string;
   plans: string;
+  projectDesign: string;
+  projectDesignIndex: string;
+  worker: string;
+  workerBundles: string;
+  workerJobs: string;
+  workerRuns: string;
+  workerPackets: string;
 }
 
 export function paths(root: string): StorePaths {
@@ -46,7 +56,9 @@ export function paths(root: string): StorePaths {
     root,
     store,
     memory: path.join(store, "memory"),
+    profile: path.join(store, "profile.md"),
     wiki: path.join(store, "wiki"),
+    wikiSchema: path.join(store, "wiki", "schema.md"),
     skills: path.join(store, "skills"),
     tools: path.join(store, "tools"),
     episodes: path.join(store, "episodes"),
@@ -55,6 +67,7 @@ export function paths(root: string): StorePaths {
     proposalsPending: path.join(store, "proposals", "pending"),
     proposalsAccepted: path.join(store, "proposals", "accepted"),
     proposalsRejected: path.join(store, "proposals", "rejected"),
+    proposalsApplied: path.join(store, "proposals", "applied"),
     sources: path.join(store, "sources"),
     sourceIndex: path.join(store, "sources", "index.json"),
     sourcesExternal: path.join(store, "sources", "external"),
@@ -75,6 +88,13 @@ export function paths(root: string): StorePaths {
     onlineLeases: path.join(store, "online", "leases.json"),
     onlineHeartbeats: path.join(store, "online", "heartbeats"),
     plans: path.join(store, "plans"),
+    projectDesign: path.join(store, "project-design"),
+    projectDesignIndex: path.join(store, "project-design", "index.json"),
+    worker: path.join(store, "worker"),
+    workerBundles: path.join(store, "worker", "bundles"),
+    workerJobs: path.join(store, "worker", "jobs"),
+    workerRuns: path.join(store, "worker", "runs"),
+    workerPackets: path.join(store, "worker", "packets"),
   };
 }
 
@@ -90,6 +110,7 @@ export async function initStore(root: string): Promise<string[]> {
     p.proposalsPending,
     p.proposalsAccepted,
     p.proposalsRejected,
+    p.proposalsApplied,
     p.sourcesExternal,
     p.sourcesHistory,
     p.sourcesRepository,
@@ -101,6 +122,11 @@ export async function initStore(root: string): Promise<string[]> {
     p.online,
     p.onlineHeartbeats,
     p.plans,
+    p.projectDesign,
+    p.workerBundles,
+    p.workerJobs,
+    p.workerRuns,
+    p.workerPackets,
     path.join(p.adapters, "codex"),
     path.join(p.adapters, "claude-code"),
   ];
@@ -136,6 +162,10 @@ export async function initStore(root: string): Promise<string[]> {
     await writeJson(p.scanIndex, { scans: [] });
     created.push(path.relative(root, p.scanIndex));
   }
+  if (!(await exists(p.projectDesignIndex))) {
+    await writeJson(p.projectDesignIndex, { designs: [] });
+    created.push(path.relative(root, p.projectDesignIndex));
+  }
   if (!(await exists(p.workItems))) {
     await writeJson(p.workItems, { items: [] });
     created.push(path.relative(root, p.workItems));
@@ -154,6 +184,9 @@ export async function initStore(root: string): Promise<string[]> {
 export async function storeStatus(root: string): Promise<Record<string, unknown>> {
   const p = paths(root);
   const pending = await listJsonFiles(p.proposalsPending);
+  const accepted = await listJsonFiles(p.proposalsAccepted);
+  const rejected = await listJsonFiles(p.proposalsRejected);
+  const applied = await listJsonFiles(p.proposalsApplied);
   const episodes = await listJsonFiles(p.episodes);
   const rewards = await listJsonFiles(p.rewards);
   const sources = await readJson<{ sources: unknown[] }>(p.sourceIndex, { sources: [] });
@@ -162,11 +195,21 @@ export async function storeStatus(root: string): Promise<Record<string, unknown>
   const registry = await readCapabilityRegistry(root);
   const workItems = await readJson<{ items: Array<{ status?: string }> }>(p.workItems, { items: [] });
   const sessions = await readJson<{ sessions: Array<{ status?: string }> }>(p.onlineSessions, { sessions: [] });
+  const workerBundles = (await listJsonFiles(p.workerBundles)).filter((file) => !path.basename(file, ".json").endsWith("-content"));
+  const workerJobs = await listJsonFiles(p.workerJobs);
+  const workerRuns = await listJsonFiles(p.workerRuns);
+  const projectDesignStatus = await projectDesignReadiness(root);
   return {
     initialized: await exists(p.store),
     store: p.store,
     episodes: episodes.length,
     rewards: rewards.length,
+    proposals: {
+      pending: pending.length,
+      accepted: accepted.length,
+      rejected: rejected.length,
+      applied: applied.length,
+    },
     pending_proposals: pending.length,
     sources: sources.sources.length,
     scans: {
@@ -186,6 +229,31 @@ export async function storeStatus(root: string): Promise<Record<string, unknown>
     online: {
       active_sessions: sessions.sessions.filter((item) => item.status === "active").length,
     },
+    worker: {
+      bundles: workerBundles.length,
+      jobs: workerJobs.length,
+      runs: workerRuns.length,
+    },
+    project_design: projectDesignStatus,
+  };
+}
+
+export async function projectDesignReadiness(root: string): Promise<Record<string, unknown>> {
+  const p = paths(root);
+  const required = {
+    profile: await exists(p.profile),
+    wiki_schema: await exists(p.wikiSchema),
+    project_extraction_skill: await exists(path.join(p.skills, "project-extraction", "SKILL.md")),
+    project_workflow_skill: await exists(path.join(p.skills, "project-workflow", "SKILL.md")),
+  };
+  const missing = Object.entries(required).filter(([, ok]) => !ok).map(([name]) => name);
+  return {
+    complete: missing.length === 0,
+    required,
+    missing,
+    recommendation: missing.length > 0
+      ? "Ask the user whether to run `agentmind project design`; do not generate final schema or project skills without user confirmation."
+      : undefined,
   };
 }
 

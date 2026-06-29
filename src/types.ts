@@ -10,6 +10,16 @@ export type SourceKind = "reference" | "history" | "repository" | "episode" | "f
 
 export type SourceContentType = "url" | "file" | "directory" | "text";
 
+export type WorkerMode = "extract" | "improve";
+
+export type WorkerJobStatus = "queued" | "running" | "completed" | "failed" | "skipped";
+
+export type ResourceBundleKind = "episode" | "conversation" | "trajectory" | "document" | "scan" | "mixed";
+
+export type ProjectDesignStatus = "draft" | "asking_user" | "reading_workspace" | "researching" | "proposing_options" | "waiting_user" | "ready_for_proposal" | "complete";
+
+export type ProjectDesignMode = "new" | "revise";
+
 export interface EpisodeRecord {
   id: string;
   workspace: string;
@@ -45,9 +55,77 @@ export interface UpdateProposal {
   reason: string;
   evidence: string[];
   risk: "low" | "medium" | "high" | "critical";
-  status: "pending_review" | "accepted" | "rejected";
+  status: "pending_review" | "accepted" | "rejected" | "applied";
   patch?: string;
+  review?: {
+    decision: "accepted" | "rejected";
+    reason?: string;
+    reviewed_at: string;
+  };
+  application?: {
+    mode: "manual";
+    reason?: string;
+    applied_at: string;
+  };
   created_at: string;
+}
+
+export interface ResourceBundle {
+  id: string;
+  kind: ResourceBundleKind;
+  source_ids: string[];
+  summary: string;
+  normalized_content_path?: string;
+  created_at: string;
+}
+
+export interface WorkerJob {
+  id: string;
+  mode: WorkerMode;
+  status: WorkerJobStatus;
+  resource_bundle_id: string;
+  target_assets: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkerRun {
+  id: string;
+  job_id: string;
+  backend: "skill_driven" | "autonomous";
+  status: "packet_ready" | "completed" | "failed" | "skipped";
+  model?: string;
+  inputs: string[];
+  decisions: Array<{ type: string; message: string; reason?: string }>;
+  proposals: string[];
+  discarded: Array<{ input: string; reason: string }>;
+  packet_path?: string;
+  created_at: string;
+}
+
+export interface ProjectDesignRecord {
+  id: string;
+  mode: ProjectDesignMode;
+  status: ProjectDesignStatus;
+  root: string;
+  from_scan?: string;
+  from_source?: string;
+  files: {
+    packet: string;
+    plan: string;
+    workspace_sources: string;
+    research_notes: string;
+    user_decisions: string;
+    profile_candidates: string;
+    schema_candidates: string;
+    skill_candidates: string;
+    migration_preview: string;
+    output_contract: string;
+    design_log: string;
+  };
+  proposals: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SourceRecord {

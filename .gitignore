@@ -1,4 +1,8 @@
 node_modules/
 dist/
 .agent-context/
+.claude/
+AGENTS.md
+CLAUDE.md
+.DS_Store
 *.log

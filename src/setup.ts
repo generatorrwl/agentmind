@@ -1,7 +1,7 @@
 import path from "node:path";
 import { connectHarness } from "./adapters.js";
 import { createExistingRepoScanIfMissing } from "./scan.js";
-import { initStore, paths, storeStatus } from "./store.js";
+import { initStore, paths, projectDesignReadiness, storeStatus } from "./store.js";
 import { exists } from "./utils.js";
 
 export async function setupWorkspace(root: string, input: { mode?: "auto" | "new" | "existing" } = {}): Promise<Record<string, unknown>> {
@@ -35,23 +35,36 @@ export async function doctorWorkspace(root: string): Promise<Record<string, unkn
     store: await exists(p.store),
     agent_manual: await exists(path.join(p.store, "AGENT_MANUAL.md")),
     canonical_workflow_skill: await exists(path.join(p.skills, "agentmind-workflow", "SKILL.md")),
+    canonical_worker_skill: await exists(path.join(p.skills, "agentmind-worker", "SKILL.md")),
+    canonical_extraction_skill: await exists(path.join(p.skills, "agentmind-extraction", "SKILL.md")),
     codex_agents_md: await exists(path.join(root, "AGENTS.md")),
     codex_skill_index: await exists(path.join(p.adapters, "codex", "SKILLS.md")),
     claude_md: await exists(path.join(root, "CLAUDE.md")),
     claude_workflow_skill: await exists(path.join(root, ".claude", "skills", "agentmind-workflow", "SKILL.md")),
+    claude_worker_skill: await exists(path.join(root, ".claude", "skills", "agentmind-worker", "SKILL.md")),
+    claude_extraction_skill: await exists(path.join(root, ".claude", "skills", "agentmind-extraction", "SKILL.md")),
     claude_session_hook: await exists(path.join(root, ".claude", "hooks", "agentmind-session-end.sh")),
     claude_settings: await exists(path.join(root, ".claude", "settings.json")),
     source_index: await exists(p.sourceIndex),
     scan_index: await exists(p.scanIndex),
+    project_design_index: await exists(p.projectDesignIndex),
+    worker_bundles: await exists(p.workerBundles),
+    worker_jobs: await exists(p.workerJobs),
+    worker_runs: await exists(p.workerRuns),
+    worker_packets: await exists(p.workerPackets),
   };
   const missing = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);
+  const projectDesign = await projectDesignReadiness(root);
   return {
     ok: missing.length === 0,
     checks,
     missing,
+    project_design: projectDesign,
     status: await storeStatus(root),
     next: missing.length === 0
-      ? ["AgentMind is connected. Open Codex or Claude Code and say: 开始"]
+      ? projectDesign.complete === false
+        ? ["AgentMind is connected.", "Project Design is incomplete. Ask the user whether to run: agentmind project design"]
+        : ["AgentMind is connected. Open Codex or Claude Code and say: 开始"]
       : ["Run: agentmind setup"],
   };
 }

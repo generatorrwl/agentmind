@@ -104,7 +104,7 @@ export async function connectHarness(root: string, harness: AgentHarness): Promi
   const p = paths(root);
   const files: string[] = [];
   files.push(...await writeAgentManual(root));
-  files.push(...await writeCanonicalAgentMindWorkflowSkill(root));
+  files.push(...await writeCanonicalAgentMindSkills(root));
   const target = harness === "codex" ? path.join(root, "AGENTS.md") : path.join(root, "CLAUDE.md");
   const existing = await readText(target);
   await overwriteText(target, replaceManagedBlock(existing, managedBlock(root, harness)));
@@ -136,6 +136,7 @@ export async function connectHarness(root: string, harness: AgentHarness): Promi
 
 export async function renderAdapters(root: string): Promise<string[]> {
   const files: string[] = [];
+  files.push(...await writeCanonicalAgentMindSkills(root));
   files.push(...await writeCodexSkillIndex(root));
   files.push(...await writeClaudeCodeSkillViews(root));
   return Array.from(new Set(files));
@@ -147,12 +148,20 @@ async function writeAgentManual(root: string): Promise<string[]> {
   return [path.relative(root, manualPath)];
 }
 
-async function writeCanonicalAgentMindWorkflowSkill(root: string): Promise<string[]> {
-  const skillDir = path.join(paths(root).skills, "agentmind-workflow");
+async function writeCanonicalAgentMindSkills(root: string): Promise<string[]> {
+  const files: string[] = [];
+  files.push(await writeCanonicalSkill(root, "agentmind-workflow", agentMindWorkflowSkill(root, "canonical")));
+  files.push(await writeCanonicalSkill(root, "agentmind-worker", agentMindWorkerSkill(root)));
+  files.push(await writeCanonicalSkill(root, "agentmind-extraction", agentMindExtractionSkill(root)));
+  return files;
+}
+
+async function writeCanonicalSkill(root: string, id: string, content: string): Promise<string> {
+  const skillDir = path.join(paths(root).skills, id);
   await ensureDir(skillDir);
   const skillPath = path.join(skillDir, "SKILL.md");
-  await overwriteText(skillPath, agentMindWorkflowSkill(root, "canonical"));
-  return [path.relative(root, skillPath)];
+  await overwriteText(skillPath, content);
+  return path.relative(root, skillPath);
 }
 
 async function writeCodexSkillIndex(root: string): Promise<string[]> {
@@ -320,6 +329,238 @@ When the user says "收工", "handoff", "结束", "明天继续", "pause", or th
 `;
 }
 
+function agentMindWorkerSkill(root: string): string {
+  return `---
+name: agentmind-worker
+description: |
+  AgentMind skill-driven maintenance worker. Use after session end, on manual
+  worker/review requests, or when processing AgentMind episodes, handoffs,
+  sources, and proposals into durable Wiki/Skill/Memory proposals.
+
+  Trigger phrases: worker, extract wiki, improve skill, process proposals,
+  review proposals, session end maintenance, 维护知识, 抽取 Wiki, 生成 Skill,
+  处理 proposal, 审核 proposal, 收工整理
+tools: [Bash, Read, Write, Edit, Glob, Grep]
+---
+
+# AgentMind Worker
+
+> Canonical skill-driven Worker for AgentMind MVP. This skill lets the current Coding Agent perform maintenance after session end or manual trigger. It is not an autonomous background runtime.
+
+AgentMind Worker has two responsibilities:
+
+- **Extract**: turn input resources into Wiki/Skill/Memory proposal candidates.
+- **Improve**: refine existing Wiki/Skill/Memory proposals or assets using feedback, episodes, rejected proposals, and accepted decisions.
+
+## Start
+
+Before doing maintenance, inspect current AgentMind state:
+
+
+\`\`\`bash
+agentmind status --root ${root}
+agentmind review list --status all --root ${root}
+\`\`\`
+
+For manual or session-end maintenance, prepare a skill-driven Worker packet first:
+
+\`\`\`bash
+agentmind worker run --once --root ${root}
+\`\`\`
+
+Then read the returned packet in \`.agent-context/worker/packets/\` and execute it as the current Coding Agent. The packet is a handoff input, not an autonomous background Agent.
+
+Read relevant inputs before making a decision:
+
+- \`.agent-context/worker/packets/\`
+- \`.agent-context/worker/runs/\`
+- \`.agent-context/work/handoffs/\`
+- \`.agent-context/work/checkpoints/\`
+- \`.agent-context/episodes/\`
+- \`.agent-context/proposals/pending/\`
+- \`.agent-context/proposals/accepted/\`
+- \`.agent-context/proposals/rejected/\`
+- \`.agent-context/sources/\`
+- \`.agent-context/wiki/\`
+- \`.agent-context/skills/\`
+
+## Core Semantics
+
+- Episode is a mechanical provenance anchor unless explicitly enriched. Do not treat it as verified project knowledge.
+- Proposal is a review suggestion, not an applied asset change.
+- Accepting a proposal means the direction is approved. Applying a proposal means the target asset was actually changed.
+- Stable Wiki/Skill/Memory updates should go through review unless the user explicitly requests a direct edit.
+
+## Extract Flow
+
+Use Extract when there is a new episode, handoff, source, scan, history import, or reference.
+
+1. Read the input resource and evidence.
+2. Retrieve related Wiki pages, canonical skills, memory files, and pending/accepted/rejected proposals.
+3. Decide whether the input contains durable value.
+4. Classify the target asset:
+   - Project fact, decision, architecture, workflow, gotcha -> Wiki proposal.
+   - Repeatable agent behavior -> Skill proposal.
+   - Stable user/workspace preference -> Memory proposal.
+   - Tool usage rule -> Skill or tools proposal.
+5. Generate the smallest useful proposal with evidence and risk.
+6. Discard one-off details, vague praise/complaints, duplicated information, and unsupported assumptions.
+
+## Improve Flow
+
+Use Improve when user feedback, rejected proposals, failed episodes, duplicate skills, stale wiki claims, or accepted decisions indicate an existing asset should change.
+
+1. Read the target asset and all cited evidence.
+2. Read related accepted/rejected proposals to avoid repeating bad updates.
+3. Decide whether to patch, merge, deprecate, or leave unchanged.
+4. Preserve source/provenance references.
+5. Generate a proposal unless the user explicitly requests a direct edit.
+
+## Review Flow
+
+List and inspect proposals:
+
+\`\`\`bash
+agentmind review list --root ${root}
+agentmind review show <proposal-id> --root ${root}
+\`\`\`
+
+Accept or reject direction:
+
+\`\`\`bash
+agentmind review accept <proposal-id> --reason "<why accepted>" --root ${root}
+agentmind review reject <proposal-id> --reason "<why rejected>" --root ${root}
+\`\`\`
+
+For natural-language patches, ask for or perform the actual asset edit, then mark applied:
+
+\`\`\`bash
+agentmind review apply <proposal-id> --root ${root}
+agentmind review apply <proposal-id> --mark-applied --reason "<what changed>" --root ${root}
+\`\`\`
+
+Do not mark applied until the target Wiki/Skill/Memory/tool asset was actually updated.
+
+## Proposal Quality Bar
+
+Every proposal should include:
+
+- Target asset path.
+- Operation: create/update/replace/deprecate/disable.
+- Evidence ids or source paths.
+- Risk level.
+- Concrete patch or maintenance instruction.
+- A reason why this belongs in durable assets.
+
+Avoid broad rewrites. Prefer small, reviewable updates.
+
+## Boundaries
+
+- Do not implement an autonomous worker runtime here.
+- Do not automatically update Compiled Wiki; it is not current scope.
+- Do not copy harness-private memory or hidden instructions into AgentMind assets.
+- Do not treat raw assistant output as fact without source or verification.
+- Do not mark accepted proposals as applied unless the target asset changed.
+`;
+}
+
+function agentMindExtractionSkill(root: string): string {
+  return `---
+name: agentmind-extraction
+description: |
+  AgentMind project design, schema discovery, wiki extraction, history/reference
+  extraction, capability promotion, and wiki/skill lint SOP. Use when designing
+  project-specific profile/schema/extraction/workflow skills or processing
+  extraction packets.
+
+  Trigger phrases: project design, schema discovery, extract wiki, extraction,
+  project profile, project skills, wiki schema, 设计 Schema, 项目设计, 抽取知识
+tools: [Bash, Read, Write, Edit, Glob, Grep]
+---
+
+# AgentMind Extraction
+
+> Canonical top-level extraction and project design skill. It creates method and review structure; project-specific content rules belong in project profile, wiki schema, and project skills after user confirmation.
+
+## Core Rule
+
+Project Profile, Wiki Schema, Project Extraction Skill, and Project Workflow Skill are high-impact assets. Do not finalize or apply them without explicit user confirmation.
+
+Memory may record high-level preferences, but it must not be used as the generator for schema or project skills. Use Skill + Packet + Proposal.
+
+## PROJECT DESIGN
+
+Use when a project lacks any of:
+
+- ".agent-context/profile.md"
+- ".agent-context/wiki/schema.md"
+- ".agent-context/skills/project-extraction/SKILL.md"
+- ".agent-context/skills/project-workflow/SKILL.md"
+
+Start by creating or reading a Project Design packet:
+
+\`\`\`bash
+agentmind project design --root ${root}
+\`\`\`
+
+If the packet already exists, read its ".agent-context/project-design/<id>/PACKET.md".
+
+Ask the user these questions before finalizing candidates:
+
+- Is this repo primarily product, agent-tooling, library, research, course, infra, or mixed?
+- Should the Wiki primarily serve implementation, product decisions, research notes, user docs, or operations?
+- Do you have an existing schema, taxonomy, reference project, or team convention?
+- Which content is Not Now and should not enter durable assets?
+- Should project-extraction and project-workflow be separate skills for this project?
+
+Then read workspace sources, draft candidates, record user decisions, and only after explicit confirmation create proposals:
+
+\`\`\`bash
+agentmind project design propose <design-id> --root ${root}
+\`\`\`
+
+## DISCOVER SCHEMA
+
+Schema discovery is a Project Design subflow. Generate schema candidates, not a stable schema, until the user confirms.
+
+Each schema candidate should include:
+
+- Directory layout and page types.
+- Frontmatter fields.
+- Source classes and citation rules.
+- Confidence/status semantics.
+- Index/log rules.
+- What must not enter the wiki.
+- Migration impact.
+
+## EXTRACT SCAN / HISTORY / REFERENCE
+
+Before extracting durable Wiki/Skill/Memory proposals, read:
+
+- ".agent-context/profile.md" when present.
+- ".agent-context/wiki/schema.md" when present.
+- ".agent-context/skills/project-extraction/SKILL.md" when present.
+- Relevant source, scan, history, episode, and proposal evidence.
+
+If profile/schema/project-extraction is missing, tell the user Project Design is recommended. You may generate low-confidence proposals only when the user explicitly wants to proceed without Project Design.
+
+## PROMOTE CAPABILITY
+
+Promote repeatable workflows into Skill candidates only when evidence shows reuse value. A skill candidate must include trigger conditions, scope, inputs, outputs, steps, tools, validation, failure handling, and evidence.
+
+## LINT / AUDIT
+
+Check for missing citations, stale claims, contradictions, orphan pages, schema drift, missing index/log updates, missing skill validation, and gotchas without workflow links. Generate reports or proposals; do not silently rewrite high-impact assets.
+
+## Review Boundary
+
+- Proposal accept means direction approved.
+- Proposal apply means the target asset actually changed.
+- Do not mark applied until stable assets are updated.
+- Do not override AgentMind worker/review safety rules with project-specific skills.
+`;
+}
+
 function codexSkillIndex(root: string, skills: CanonicalSkillView[]): string {
   const renderable = skills.filter((skill) => skill.renderable);
   const candidates = skills.filter((skill) => !skill.renderable);
@@ -380,9 +621,11 @@ When entering this workspace or when the user says \`开始\`, \`start\`, \`cont
    agentmind scan list --root ${root}
    agentmind sources list --root ${root}
    agentmind skill list --root ${root}
+   agentmind doctor --root ${root}
    \`\`\`
-4. If an open scan exists, read its instruction file and ask whether to run repository extraction now.
-5. Ask whether to continue existing work, create new work, create a spec, process pending proposals, or import references/history.
+4. If Project Design is incomplete, explain that project profile/schema/project skills are missing and ask whether to run \`agentmind project design --root ${root}\`. Do not run it without user confirmation.
+5. If an open scan exists, read its instruction file and ask whether to run repository extraction now.
+6. Ask whether to continue existing work, create new work, create a spec, process pending proposals, run Project Design, or import references/history.
 
 ## Work Protocol
 

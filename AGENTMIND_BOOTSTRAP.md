@@ -13,12 +13,30 @@ agentmind setup
 agentmind doctor
 ```
 
+When you are inside the AgentMind source repository itself, rebuild before using the local dist entrypoint or asking another session to refresh this repo:
+
+```bash
+npm run build
+node dist/index.js setup --root /Users/renwanlan/Documents/memory-helper
+node dist/index.js doctor --root /Users/renwanlan/Documents/memory-helper
+node dist/index.js skill render --root /Users/renwanlan/Documents/memory-helper
+```
+
+If the source checkout is linked as `agentmind`, the equivalent command form is:
+
+```bash
+agentmind setup --root /Users/renwanlan/Documents/memory-helper
+agentmind doctor --root /Users/renwanlan/Documents/memory-helper
+agentmind skill render --root /Users/renwanlan/Documents/memory-helper
+```
+
 If `agentmind` is not available, tell the user to install it with `npm install -g agentmind` or, when developing AgentMind itself, to run `npm install && npm run build && npm link` in the AgentMind source checkout.
 
 These commands are safe to rerun:
 
 - `setup` creates missing AgentMind store files and connects Codex/Claude adapters.
 - `doctor` verifies that AgentMind entrypoints, generated skills, hooks, and adapter views are present.
+- `skill render` refreshes canonical AgentMind skills into Codex and Claude adapter views.
 - Under the hood, setup is equivalent to safe `init` + adapter connection.
 
 Do not overwrite unrelated user content outside AgentMind-managed blocks or generated AgentMind files.
@@ -60,9 +78,58 @@ Inspect those surfaces first:
 agentmind scan list
 agentmind sources list
 agentmind skill list
+agentmind doctor
 ```
 
 Ask whether to continue existing work, run an open repository scan, process proposals, import references/history, create new work, or create a spec.
+
+## Project Design Check
+
+After bootstrap, inspect `agentmind doctor` or `agentmind status` for Project Design readiness.
+
+If any of these are missing, Project Design is incomplete:
+
+```text
+.agent-context/profile.md
+.agent-context/wiki/schema.md
+.agent-context/skills/project-extraction/SKILL.md
+.agent-context/skills/project-workflow/SKILL.md
+```
+
+Do not silently generate final schema or project-specific skills. Explain to the user that without Project Design, Worker and Extraction packets can only rely on generic rules and may produce lower-confidence proposals. Ask whether to start Project Design.
+
+Start a Project Design packet only after the user confirms:
+
+```bash
+agentmind project design
+```
+
+If a packet already exists, inspect it instead of creating duplicates:
+
+```bash
+agentmind project design list
+agentmind project design status <design-id>
+```
+
+For this repository, the current packet may be:
+
+```bash
+agentmind project design status project_design_ced726ff4c --root /Users/renwanlan/Documents/memory-helper
+```
+
+Before creating stable-asset proposals, record explicit confirmation in the packet's `user-decisions.md`:
+
+```text
+- confirmed_for_proposal: yes
+```
+
+Then create proposals:
+
+```bash
+agentmind project design propose <design-id>
+```
+
+`propose` only creates pending proposals. Do not mark them applied until review/apply has actually changed the target profile/schema/project skill files.
 
 ## Existing Repo Scan
 
@@ -166,6 +233,8 @@ If stale work exists, ask the user before taking over, pausing, or abandoning it
 ## Important Boundaries
 
 - Do not treat CLI commands as the user experience. They are the runtime API that you call behind the scenes.
+- Do not require the user to remember Project Design CLI. Detect missing profile/schema/project skills and ask whether to start Project Design.
+- Do not run Project Design, generate final schema, or enable project-specific skills without user confirmation.
 - Do not directly copy one harness's private memory or skills into another harness.
 - Promote useful behavior into AgentMind canonical assets first, then render adapters.
 - Treat discovered skills as candidates until promoted.

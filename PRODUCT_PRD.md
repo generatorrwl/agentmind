@@ -63,9 +63,34 @@ The product should make project context and agent capability cumulative, portabl
 - Automatically rewrite important project knowledge without review or evidence.
 - Solve team-scale governance in the first version.
 
-## 7. Core Concepts
+## 7. Product Principles
 
-### 7.1 Context Assets
+### 7.1 Slow Down On High-Impact Settings
+
+High-impact AgentMind settings that shape long-term behavior and knowledge structure must be discussed and researched carefully. An agent should not decide them casually in a single response.
+
+These settings include, but are not limited to:
+
+- Project goals, long-term objectives, and stage objectives.
+- Project wiki schema: taxonomy, page types, frontmatter, naming rules, source classes, index/log rules.
+- Project-specific maintenance skill: how to ingest/query/lint/promote, and what can become fixed knowledge.
+- Capability/skill promotion policy: what behavior deserves reusable skill status versus temporary runbook or proposal status.
+- High-impact memory and team/user operating preferences.
+
+Principle: **the more accurate these settings are, the less pollution, rework, and bad generalization future agents create.** Before creating or modifying these settings, the agent should follow a discovery workflow:
+
+1. Ask the user whether an existing schema, objective, taxonomy, team convention, or reference project already exists.
+2. If not, inspect the workspace README, docs, source layout, past conversations, existing wiki/skills/tools, and open work.
+3. Perform necessary external research for the project's business/domain, including comparable wiki/schema/skill organization patterns.
+4. Propose 2-3 candidate designs, including fit, benefits, tradeoffs, risks, and migration impact.
+5. Discuss with the user over multiple turns and record decisions plus unresolved questions.
+6. Write stable schema, objectives, maintenance skills, or high-impact memory only after user confirmation or when configuration explicitly allows it.
+
+AgentMind should not depend on Codex/Claude internal goal or plan mechanisms as product infrastructure. Cross-harness goals, plans, schema discovery state, and user decisions should be durable local files, such as work items, extraction packets, schema candidates, research notes, and decision logs.
+
+## 8. Core Concepts
+
+### 8.1 Context Assets
 
 The product manages several evolving asset types.
 
@@ -80,7 +105,7 @@ The product manages several evolving asset types.
 | Rewards | Signals about success/failure/usefulness | User correction, tests passing, user acceptance, tool failure, rollback |
 | Proposals | Candidate updates to assets | Patch memory, update wiki, modify skill, deprecate stale rule |
 
-### 7.2 Public Memory
+### 8.2 Public Memory
 
 Public memory captures stable preferences and operating conventions that should influence agents across sessions and possibly across projects.
 
@@ -93,7 +118,7 @@ Examples:
 
 Public memory is high-impact because it affects many future runs. Updates should usually require explicit confirmation or repeated evidence.
 
-### 7.3 Project Knowledge System
+### 8.3 Project Knowledge System
 
 The project knowledge system is more than a wiki. It is the workspace's evolving business-aware knowledge operating layer.
 
@@ -151,7 +176,31 @@ The fixed knowledge layer should support four wiki operations:
 
 This means the wiki is not a passive documentation folder. It is a maintained knowledge codebase: raw sources are the inputs, wiki pages are compiled artifacts, and schema/maintenance skills are the build rules.
 
-### 7.4 Skills, MCP, And Tools
+#### Schema And Objective Discovery
+
+Project schema and project objectives are high-impact AgentMind assets. They must follow the principle: ask the user first, inspect the workspace, research the domain, propose options, then confirm.
+
+The first version should support a schema discovery packet instead of letting an agent directly invent the final wiki structure. Suggested intermediate files:
+
+```text
+.agent-context/extractions/<id>/PACKET.md
+.agent-context/extractions/<id>/PLAN.md
+.agent-context/extractions/<id>/schema-candidates.md
+.agent-context/extractions/<id>/research-notes.md
+.agent-context/extractions/<id>/user-decisions.md
+```
+
+The `agentmind-extraction` skill should define the schema discovery method:
+
+- Ask whether the user already has a schema/objective/reference project.
+- Read project sources, history, episodes, existing wiki, and existing skills.
+- Perform network research when useful to find comparable project wikis, docs, skills, runbooks, and taxonomies.
+- Present candidate schemas instead of finalizing immediately.
+- Record user choices, modifications, unresolved questions, and future migration risk.
+
+The schema artifact may start as a proposal; after user confirmation it can be written to `.agent-context/wiki/schema.md` and reflected into the wiki maintenance skill.
+
+### 8.4 Skills, MCP, And Tools
 
 Skills encode repeatable project workflows. They should be portable across agents where possible, with adapter-specific packaging only at the edge.
 
