@@ -9,9 +9,7 @@
   "files": [
     "dist",
     "README.md",
-    "AGENTMIND_BOOTSTRAP.md",
-    "PRODUCT_PRD.md",
-    "PRODUCT_PRD.zh-CN.md"
+    "AGENTMIND_BOOTSTRAP.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

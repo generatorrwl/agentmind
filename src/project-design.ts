@@ -128,9 +128,7 @@ async function buildDesignContext(root: string, input: { fromScan?: string; from
     sources: sources.map((source) => ({ id: source.id, kind: source.kind, title: source.title, snapshot_path: source.snapshot_path, reason: source.reason })),
     suggested_workspace_sources: [
       "README.md",
-      "PRODUCT_PRD.zh-CN.md",
-      "EXTRACTION_PRD.zh-CN.md",
-      "AGENTMIND_WORKER_PRD.zh-CN.md",
+      "docs/",
       "package.json",
       "src/",
       ".agent-context/wiki/",
@@ -229,7 +227,7 @@ function buildResearchNotes(design: ProjectDesignRecord): string {
 ## Workspace Reading
 
 - [ ] README / package manifest
-- [ ] Product and extraction PRDs
+- [ ] Product/design docs when they are intentionally available in the workspace
 - [ ] Source layout
 - [ ] Existing AgentMind wiki and skills
 - [ ] Pending proposals
